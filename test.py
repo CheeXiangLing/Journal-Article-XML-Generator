@@ -7,6 +7,13 @@ import re
 import streamlit as st
 import os
 
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4==4.12.3"])
+    from bs4 import BeautifulSoup
+
 # Initialize session state
 if 'reset_counter' not in st.session_state:
     st.session_state.reset_counter = 0
