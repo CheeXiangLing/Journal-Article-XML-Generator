@@ -7,12 +7,23 @@ import re
 import streamlit as st
 import os
 
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4==4.12.3"])
-    from bs4 import BeautifulSoup
+import subprocess, sys, os
+
+# Ensure packages are installed even if Streamlit Cloud misses them
+required = {
+    'beautifulsoup4==4.12.3',
+    'soupsieve==2.5'
+}
+installed = {pkg.key for pkg in __import__('pkg_resources').working_set}
+missing = required - installed
+
+if missing:
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', *missing], 
+                         stdout=subprocess.DEVNULL, 
+                         stderr=subprocess.DEVNULL)
+
+# Now safely import
+from bs4 import BeautifulSoup
 
 # Initialize session state
 if 'reset_counter' not in st.session_state:
