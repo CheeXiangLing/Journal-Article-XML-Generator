@@ -1,5 +1,5 @@
+beautifulsoup4==4.12.3
 streamlit==1.32.2
-beautifulsoup4==4.12.3  # This provides bs4
 requests==2.31.0
 pymupdf==1.23.7
 python-dateutil==2.8.2
