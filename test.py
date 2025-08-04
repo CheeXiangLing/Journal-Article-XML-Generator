@@ -92,13 +92,13 @@ def generate_filename(article_url, xml_content):
         doi_elem = root.find(".//ELocationID[@EIdType='doi']")
         
         # Extract last digit from DOI (default to "0" if not found)
-        last_doi_digit = "0"
+        last_doi_digit = ""
         if doi_elem is not None and doi_elem.text:
             doi = doi_elem.text.strip()
-            last_doi_digit = doi[-1] if doi[-1].isdigit() else "0"
+            parts = doi.split(".")
+            last_part = parts[-1]
+            last_doi_digit = last_part if last_part.isdigit() else ""
 
-        ##first_digit = next((char for char in xml_content if char.isdigit()))
-        
         # Extract last number from article URL
         numbers = re.findall(r'\d+', article_url)
         last_url_num = numbers[-1] if numbers else "-"
@@ -574,3 +574,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
