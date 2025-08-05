@@ -200,9 +200,9 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
                 "Asian Journal of Law and Policy": "AJLP",
                 "International Journal of Creative Multimedia": "IJCM",
                 "Journal of Management, Finance and Accounting": "IJOMFA",
-                "Journal on Robotics, Automation and Sciences": "IJORAS",
                 "Issues and Perspectives in Business and Social Sciences": "IPBSS",
-                "Journal of Communication, Language and Culture": "JCLC"
+                "Journal of Communication, Language and Culture": "JCLC",
+                "International Journal on Robotics, Automation and Sciences": "IJORAS"
             }
 
             tree = ET.parse(temp_xml)
@@ -574,4 +574,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
