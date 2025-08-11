@@ -6,7 +6,6 @@ import fitz  # PyMuPDF
 import re
 import streamlit as st
 import os
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -39,73 +38,12 @@ if 'show_combine_section' not in st.session_state:
     st.session_state.show_combine_section = False
 if 'final_combined_xml' not in st.session_state:
     st.session_state.final_combined_xml = None
-if 'edit_journal_index' not in st.session_state:
-    st.session_state.edit_journal_index = None
-if 'current_journals' not in st.session_state:
-    st.session_state.current_journals = {}
-
-# Constants
-JOURNALS_FILE = "journal_shortcodes.json"
-
-# Journal Management Functions
-def load_journals():
-    """Load journals from JSON file"""
-    try:
-        if Path(JOURNALS_FILE).exists():
-            with open(JOURNALS_FILE, 'r') as f:
-                return json.load(f)
-        # If file doesn't exist, create it with an empty dict
-        with open(JOURNALS_FILE, 'w') as f:
-            json.dump({}, f)
-        return {}
-    except Exception as e:
-        st.error(f"Error loading journals: {str(e)}")
-        return {}
-
-def save_journals(journals):
-    """Save journals to JSON file"""
-    try:
-        with open(JOURNALS_FILE, 'w') as f:
-            json.dump(journals, f, indent=2)
-        return True
-    except Exception as e:
-        st.error(f"Error saving journals: {str(e)}")
-        return False
-
-def add_journal(name, abbreviation):
-    """Add a new journal"""
-    if name in st.session_state.current_journals:
-        st.warning("This journal already exists.")
-        return False
-    
-    # Convert abbreviation to uppercase
-    abbreviation = abbreviation.upper()
-    st.session_state.current_journals[name] = abbreviation
-    if save_journals(st.session_state.current_journals):
-        st.session_state.current_journals = load_journals()  # Reload to ensure consistency
-        return True
-    return False
-
-def update_journal(old_name, new_name, new_abbreviation):
-    """Update an existing journal"""
-    # Convert abbreviation to uppercase
-    new_abbreviation = new_abbreviation.upper()
-    if old_name in st.session_state.current_journals:
-        del st.session_state.current_journals[old_name]
-    st.session_state.current_journals[new_name] = new_abbreviation
-    if save_journals(st.session_state.current_journals):
-        st.session_state.current_journals = load_journals()  # Reload to ensure consistency
-        return True
-    return False
-
-def delete_journal(name):
-    """Delete a journal"""
-    if name in st.session_state.current_journals:
-        del st.session_state.current_journals[name]
-        if save_journals(st.session_state.current_journals):
-            st.session_state.current_journals = load_journals()  # Reload to ensure consistency
-            return True
-    return False
+if 'journal_name' not in st.session_state:
+    st.session_state.journal_name = None
+if 'journal_abbrev' not in st.session_state:
+    st.session_state.journal_abbrev = None
+if 'show_journal_section' not in st.session_state:
+    st.session_state.show_journal_section = False
 
 # XML Processing Functions
 def parse_date(date_str):
@@ -150,6 +88,9 @@ def clear_form():
     st.session_state.filename = "formatted_article_set.xml"
     st.session_state.show_combine_section = False
     st.session_state.final_combined_xml = None
+    st.session_state.journal_name = None
+    st.session_state.journal_abbrev = None
+    st.session_state.show_journal_section = False
 
 def generate_filename(article_url, xml_content):
     try:
@@ -246,6 +187,17 @@ def indent(elem, level=0):
         if level > 0 and (not elem.tail or not elem.tail.strip()):
             elem.tail = newline + indent_str * level
 
+def extract_journal_name(xml_content):
+    try:
+        root = ET.fromstring(xml_content)
+        journal_title = root.findtext(".//JournalTitle")
+        if journal_title:
+            return journal_title.strip()
+        return None
+    except Exception as e:
+        st.error(f"Error extracting journal name: {str(e)}")
+        return None
+
 def process_files(pdf_file, input_xml, article_url, pdf_link):
     try:
         temp_pdf = "temp_uploaded.pdf"
@@ -262,7 +214,19 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
             with open(temp_xml, "r", encoding="utf-8") as f:
                 xml_content = f.read()
             
+            # Extract journal name from XML
+            st.session_state.journal_name = extract_journal_name(xml_content)
+            
+            if not st.session_state.journal_name:
+                st.error("Could not extract journal name from the XML file. Please check the XML format.")
+                return
+            
+            st.session_state.show_journal_section = True
             st.session_state.filename = generate_filename(article_url, xml_content)
+            
+            # Wait for user to input journal abbreviation
+            if not st.session_state.journal_abbrev:
+                return
             
             tree = ET.parse(temp_xml)
             root = tree.getroot()
@@ -280,10 +244,7 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
                 raise ValueError("Journal title or ISSN not found")
 
             journal_title = jt_elem.text.strip()
-            if journal_title not in st.session_state.current_journals:
-                raise ValueError(f"Journal title '{journal_title}' not found. Please add it in the Journal Management section.")
-
-            shortcode = st.session_state.current_journals[journal_title]
+            shortcode = st.session_state.journal_abbrev.upper()
             pmc_id = shortcode.lower()
             
             # Create XML structure
@@ -590,80 +551,6 @@ def main():
     st.title("Journal Article XML Generator")
     st.markdown('<div style="font-size:18px;margin-bottom:10px; font-weight:600">This tool creates JATS XML by merging metadata from the article PDF and web input with back-section content from Vertopal.</div>', unsafe_allow_html=True)
     
-    # Initialize journals
-    if not st.session_state.current_journals:
-        st.session_state.current_journals = load_journals()
-    
-    # Journal Management Section
-    st.markdown("---")
-    st.markdown('<div style="font-size:25px; font-weight:600; margin-bottom:10px;">Journal Management</div>', unsafe_allow_html=True)
-    
-    with st.expander("📚 Current Journals", expanded=True):
-        if not st.session_state.current_journals:
-            st.warning("No journals found in the system.")
-        else:
-            cols = st.columns([3, 2, 1, 1])
-            cols[0].markdown("**Journal Name**")
-            cols[1].markdown("**Abbreviation**")
-            cols[2].markdown("**Edit**")
-            cols[3].markdown("**Delete**")
-            
-            for idx, (journal_name, abbrev) in enumerate(st.session_state.current_journals.items()):
-                cols = st.columns([3, 2, 1, 1])
-                cols[0].write(journal_name)
-                cols[1].write(abbrev)
-                
-                if cols[2].button("✏️", key=f"edit_{idx}"):
-                    st.session_state.edit_journal_index = idx
-                    st.session_state.edit_name = journal_name
-                    st.session_state.edit_abbrev = abbrev
-                
-                if cols[3].button("🗑️", key=f"delete_{idx}"):
-                    if delete_journal(journal_name):
-                        st.success(f"Deleted {journal_name}")
-                        st.rerun()
-                    else:
-                        st.error("Failed to delete journal")
-    
-    with st.expander("➕ Add/Edit Journal", expanded=False):
-        if st.session_state.edit_journal_index is not None:
-            st.markdown("### Edit Journal")
-            edit_name = st.text_input("Journal Name", value=st.session_state.edit_name, key="edit_name_input")
-            edit_abbrev = st.text_input("Abbreviation", value=st.session_state.edit_abbrev, key="edit_abbrev_input")
-            
-            col1, col2 = st.columns([1, 2])
-            if col1.button("Save Changes"):
-                if edit_name and edit_abbrev:
-                    old_name = st.session_state.edit_name
-                    if update_journal(old_name, edit_name, edit_abbrev):
-                        st.success("Journal updated successfully!")
-                        st.session_state.edit_journal_index = None
-                        st.rerun()
-                    else:
-                        st.error("Failed to update journal")
-                else:
-                    st.warning("Please provide both journal name and abbreviation")
-            
-            if col2.button("Cancel"):
-                st.session_state.edit_journal_index = None
-        else:
-            st.markdown("### Add New Journal")
-            new_journal = st.text_input("Journal Name", key="new_journal_name")
-            new_abbrev = st.text_input("Abbreviation", key="new_journal_abbrev")
-            
-            if st.button("Add Journal"):
-                if new_journal and new_abbrev:
-                    if new_journal in st.session_state.current_journals:
-                        st.warning("This journal already exists. Use the edit function to modify it.")
-                    else:
-                        if add_journal(new_journal, new_abbrev):
-                            st.success(f"Added {new_journal} ({new_abbrev}) to journals list!")
-                            st.rerun()
-                        else:
-                            st.error("Failed to add journal")
-                else:
-                    st.warning("Please provide both journal name and abbreviation")
-
     # Main XML Processing Form
     st.markdown("---")
     reset_key = st.session_state.reset_counter
@@ -720,6 +607,37 @@ def main():
                 st.warning("Please provide all required files and URLs")
             else:
                 process_files(pdf_file, input_xml, article_url, pdf_link)
+    
+    # Journal Information Section (shown after files are uploaded)
+    if st.session_state.show_journal_section:
+        st.markdown("---")
+        st.markdown('<div style="font-size:25px; font-weight:600; margin-bottom:10px;">Journal Information</div>', unsafe_allow_html=True)
+        
+        with st.form("journal_form"):
+            st.markdown(f"**Journal Name:** {st.session_state.journal_name}")
+            
+            # Allow user to edit journal name if needed
+            new_journal_name = st.text_input(
+                "Edit Journal Name (if different from detected)",
+                value=st.session_state.journal_name,
+                key=f"new_journal_name_{reset_key}"
+            )
+            
+            journal_abbrev = st.text_input(
+                "Journal Abbreviation (required)",
+                value=st.session_state.journal_abbrev if st.session_state.journal_abbrev else "",
+                key=f"journal_abbrev_{reset_key}",
+                help="Enter a short abbreviation for the journal (e.g., JETAP for Journal of Engineering Technology and Applied Physics)"
+            )
+            
+            if st.form_submit_button("Confirm Journal Information"):
+                if not journal_abbrev:
+                    st.error("Please enter a journal abbreviation")
+                else:
+                    st.session_state.journal_name = new_journal_name if new_journal_name else st.session_state.journal_name
+                    st.session_state.journal_abbrev = journal_abbrev.upper()
+                    st.success("Journal information saved! Processing will continue.")
+                    st.rerun()
     
     if st.session_state.show_combine_section:
         st.markdown("---")
