@@ -38,10 +38,10 @@ if 'show_combine_section' not in st.session_state:
     st.session_state.show_combine_section = False
 if 'final_combined_xml' not in st.session_state:
     st.session_state.final_combined_xml = None
-if 'journal_name' not in st.session_state:
-    st.session_state.journal_name = None
-if 'journal_abbrev' not in st.session_state:
-    st.session_state.journal_abbrev = None
+if 'journal_info' not in st.session_state:
+    st.session_state.journal_info = {}
+if 'show_journal_section' not in st.session_state:
+    st.session_state.show_journal_section = False
 
 # XML Processing Functions
 def parse_date(date_str):
@@ -52,6 +52,36 @@ def parse_date(date_str):
         except:
             continue
     return "null", "null", "null"
+
+def extract_journal_info(xml_content):
+    """Extract journal name and abbreviation from XML content"""
+    try:
+        root = ET.fromstring(xml_content)
+        
+        # Get journal title
+        journal_title = root.findtext(".//JournalTitle", "").strip()
+        if not journal_title:
+            return None
+        
+        # Get DOI and extract abbreviation
+        doi_elem = root.find(".//ELocationID[@EIdType='doi']")
+        if doi_elem is not None and doi_elem.text:
+            doi = doi_elem.text.strip()
+            # Extract the part after 10. and before the next /
+            parts = doi.split('/')
+            if len(parts) > 1:
+                prefix = parts[0].split('.')[-1] if '.' in parts[0] else parts[0]
+                abbreviation = prefix.lower()
+                return {
+                    'name': journal_title,
+                    'abbreviation': abbreviation,
+                    'doi_prefix': prefix
+                }
+        
+        return None
+    except Exception as e:
+        st.error(f"Error extracting journal info: {str(e)}")
+        return None
 
 def extract_history_from_pdf(pdf_path):
     try:
@@ -86,8 +116,8 @@ def clear_form():
     st.session_state.filename = "formatted_article_set.xml"
     st.session_state.show_combine_section = False
     st.session_state.final_combined_xml = None
-    st.session_state.journal_name = None
-    st.session_state.journal_abbrev = None
+    st.session_state.journal_info = {}
+    st.session_state.show_journal_section = False
 
 def generate_filename(article_url, xml_content):
     try:
@@ -184,39 +214,6 @@ def indent(elem, level=0):
         if level > 0 and (not elem.tail or not elem.tail.strip()):
             elem.tail = newline + indent_str * level
 
-def extract_journal_info(xml_content):
-    try:
-        root = ET.fromstring(xml_content)
-        
-        # Extract journal name
-        journal_title = root.findtext(".//JournalTitle")
-        if not journal_title:
-            raise ValueError("JournalTitle not found in XML")
-        
-        # Extract journal abbreviation from DOI
-        doi_elem = root.find(".//ELocationID[@EIdType='doi']")
-        if not doi_elem or not doi_elem.text:
-            raise ValueError("DOI not found in XML")
-        
-        doi = doi_elem.text.strip()
-        # Extract the part after the prefix (e.g., 10.33093/) and before the year
-        parts = doi.split('/')
-        if len(parts) < 2:
-            raise ValueError("Invalid DOI format")
-        
-        # Get the part after the prefix and split by dots
-        suffix_parts = parts[1].split('.')
-        if not suffix_parts:
-            raise ValueError("Invalid DOI suffix format")
-        
-        # The journal abbreviation is the first part before the year
-        journal_abbrev = suffix_parts[0].upper()
-        
-        return journal_title.strip(), journal_abbrev
-    except Exception as e:
-        st.error(f"Error extracting journal information: {str(e)}")
-        return None, None
-
 def process_files(pdf_file, input_xml, article_url, pdf_link):
     try:
         temp_pdf = "temp_uploaded.pdf"
@@ -233,11 +230,12 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
             with open(temp_xml, "r", encoding="utf-8") as f:
                 xml_content = f.read()
             
-            # Extract journal information from XML
-            st.session_state.journal_name, st.session_state.journal_abbrev = extract_journal_info(xml_content)
-            
-            if not st.session_state.journal_name or not st.session_state.journal_abbrev:
-                st.error("Could not extract required journal information from the XML file.")
+            # Extract journal info from XML
+            journal_info = extract_journal_info(xml_content)
+            if journal_info:
+                st.session_state.journal_info = journal_info
+                st.session_state.show_journal_section = True
+                st.rerun()
                 return
             
             st.session_state.filename = generate_filename(article_url, xml_content)
@@ -258,7 +256,7 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
                 raise ValueError("Journal title or ISSN not found")
 
             journal_title = jt_elem.text.strip()
-            shortcode = st.session_state.journal_abbrev
+            shortcode = st.session_state.journal_info['abbreviation']
             pmc_id = shortcode.lower()
             
             # Create XML structure
@@ -622,34 +620,41 @@ def main():
             else:
                 process_files(pdf_file, input_xml, article_url, pdf_link)
     
-    # Display detected journal information
-    if st.session_state.journal_name and st.session_state.journal_abbrev:
+    # Journal Information Section (shown after file upload)
+    if st.session_state.show_journal_section:
         st.markdown("---")
         st.markdown('<div style="font-size:25px; font-weight:600; margin-bottom:10px;">Journal Information</div>', unsafe_allow_html=True)
-        st.markdown(f"**Journal Name:** {st.session_state.journal_name}")
-        st.markdown(f"**Journal Abbreviation:** {st.session_state.journal_abbrev}")
-    
-    if st.session_state.show_combine_section:
-        st.markdown("---")
-        st.markdown('<div style="font-size:25px; font-weight:600; margin-bottom:10px;">Combine with Template XML</div>', unsafe_allow_html=True)
         
-        with st.form("template_form"):
-            template_file = st.file_uploader(
-                "Upload Template XML",
-                type=['xml'],
-                help="Upload the template XML file to combine with (must contain <front> section)",
-                key=f"template_uploader_{reset_key}"
-            )
+        with st.container():
+            cols = st.columns([3, 2])
+            cols[0].markdown(f"**Journal Name:** {st.session_state.journal_info['name']}")
+            cols[1].markdown(f"**Abbreviation:** {st.session_state.journal_info['abbreviation']}")
             
-            combine_button = st.form_submit_button("Combine with Template")
-            
-            if combine_button:
-                if template_file is None:
-                    st.warning("Please upload a template XML file")
-                else:
-                    combine_with_template(template_file)
+            if st.button("Continue Processing"):
+                st.session_state.show_journal_section = False
+                st.rerun()
     
-    if st.session_state.processed_xml:
+    if st.session_state.processed_xml and not st.session_state.show_journal_section:
+        if st.session_state.show_combine_section:
+            st.markdown("---")
+            st.markdown('<div style="font-size:25px; font-weight:600; margin-bottom:10px;">Combine with Template XML</div>', unsafe_allow_html=True)
+            
+            with st.form("template_form"):
+                template_file = st.file_uploader(
+                    "Upload Template XML",
+                    type=['xml'],
+                    help="Upload the template XML file to combine with (must contain <front> section)",
+                    key=f"template_uploader_{reset_key}"
+                )
+                
+                combine_button = st.form_submit_button("Combine with Template")
+                
+                if combine_button:
+                    if template_file is None:
+                        st.warning("Please upload a template XML file")
+                    else:
+                        combine_with_template(template_file)
+        
         st.download_button(
             label="Download Processed XML",
             data=st.session_state.processed_xml,
