@@ -42,8 +42,6 @@ if 'journal_name' not in st.session_state:
     st.session_state.journal_name = None
 if 'journal_abbrev' not in st.session_state:
     st.session_state.journal_abbrev = None
-if 'show_journal_section' not in st.session_state:
-    st.session_state.show_journal_section = False
 
 # XML Processing Functions
 def parse_date(date_str):
@@ -90,7 +88,6 @@ def clear_form():
     st.session_state.final_combined_xml = None
     st.session_state.journal_name = None
     st.session_state.journal_abbrev = None
-    st.session_state.show_journal_section = False
 
 def generate_filename(article_url, xml_content):
     try:
@@ -187,16 +184,38 @@ def indent(elem, level=0):
         if level > 0 and (not elem.tail or not elem.tail.strip()):
             elem.tail = newline + indent_str * level
 
-def extract_journal_name(xml_content):
+def extract_journal_info(xml_content):
     try:
         root = ET.fromstring(xml_content)
+        
+        # Extract journal name
         journal_title = root.findtext(".//JournalTitle")
-        if journal_title:
-            return journal_title.strip()
-        return None
+        if not journal_title:
+            raise ValueError("JournalTitle not found in XML")
+        
+        # Extract journal abbreviation from DOI
+        doi_elem = root.find(".//ELocationID[@EIdType='doi']")
+        if not doi_elem or not doi_elem.text:
+            raise ValueError("DOI not found in XML")
+        
+        doi = doi_elem.text.strip()
+        # Extract the part after the prefix (e.g., 10.33093/) and before the year
+        parts = doi.split('/')
+        if len(parts) < 2:
+            raise ValueError("Invalid DOI format")
+        
+        # Get the part after the prefix and split by dots
+        suffix_parts = parts[1].split('.')
+        if not suffix_parts:
+            raise ValueError("Invalid DOI suffix format")
+        
+        # The journal abbreviation is the first part before the year
+        journal_abbrev = suffix_parts[0].upper()
+        
+        return journal_title.strip(), journal_abbrev
     except Exception as e:
-        st.error(f"Error extracting journal name: {str(e)}")
-        return None
+        st.error(f"Error extracting journal information: {str(e)}")
+        return None, None
 
 def process_files(pdf_file, input_xml, article_url, pdf_link):
     try:
@@ -214,19 +233,14 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
             with open(temp_xml, "r", encoding="utf-8") as f:
                 xml_content = f.read()
             
-            # Extract journal name from XML
-            st.session_state.journal_name = extract_journal_name(xml_content)
+            # Extract journal information from XML
+            st.session_state.journal_name, st.session_state.journal_abbrev = extract_journal_info(xml_content)
             
-            if not st.session_state.journal_name:
-                st.error("Could not extract journal name from the XML file. Please check the XML format.")
+            if not st.session_state.journal_name or not st.session_state.journal_abbrev:
+                st.error("Could not extract required journal information from the XML file.")
                 return
             
-            st.session_state.show_journal_section = True
             st.session_state.filename = generate_filename(article_url, xml_content)
-            
-            # Wait for user to input journal abbreviation
-            if not st.session_state.journal_abbrev:
-                return
             
             tree = ET.parse(temp_xml)
             root = tree.getroot()
@@ -244,7 +258,7 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
                 raise ValueError("Journal title or ISSN not found")
 
             journal_title = jt_elem.text.strip()
-            shortcode = st.session_state.journal_abbrev.upper()
+            shortcode = st.session_state.journal_abbrev
             pmc_id = shortcode.lower()
             
             # Create XML structure
@@ -608,36 +622,12 @@ def main():
             else:
                 process_files(pdf_file, input_xml, article_url, pdf_link)
     
-    # Journal Information Section (shown after files are uploaded)
-    if st.session_state.show_journal_section:
+    # Display detected journal information
+    if st.session_state.journal_name and st.session_state.journal_abbrev:
         st.markdown("---")
         st.markdown('<div style="font-size:25px; font-weight:600; margin-bottom:10px;">Journal Information</div>', unsafe_allow_html=True)
-        
-        with st.form("journal_form"):
-            st.markdown(f"**Journal Name:** {st.session_state.journal_name}")
-            
-            # Allow user to edit journal name if needed
-            new_journal_name = st.text_input(
-                "Edit Journal Name (if different from detected)",
-                value=st.session_state.journal_name,
-                key=f"new_journal_name_{reset_key}"
-            )
-            
-            journal_abbrev = st.text_input(
-                "Journal Abbreviation (required)",
-                value=st.session_state.journal_abbrev if st.session_state.journal_abbrev else "",
-                key=f"journal_abbrev_{reset_key}",
-                help="Enter a short abbreviation for the journal (e.g., JETAP for Journal of Engineering Technology and Applied Physics)"
-            )
-            
-            if st.form_submit_button("Confirm Journal Information"):
-                if not journal_abbrev:
-                    st.error("Please enter a journal abbreviation")
-                else:
-                    st.session_state.journal_name = new_journal_name if new_journal_name else st.session_state.journal_name
-                    st.session_state.journal_abbrev = journal_abbrev.upper()
-                    st.success("Journal information saved! Processing will continue.")
-                    st.rerun()
+        st.markdown(f"**Journal Name:** {st.session_state.journal_name}")
+        st.markdown(f"**Journal Abbreviation:** {st.session_state.journal_abbrev}")
     
     if st.session_state.show_combine_section:
         st.markdown("---")
