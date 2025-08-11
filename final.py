@@ -68,41 +68,88 @@ def load_journals():
         return {}
 
 def save_journals(journals):
-    """Save journals to JSON file"""
     try:
-        with open(JOURNALS_FILE, 'w') as f:
+        # Get absolute path
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        json_path = os.path.join(base_dir, "journal_shortcodes.json")
+        
+        # Write with file sync
+        with open(json_path, 'w') as f:
             json.dump(journals, f, indent=2)
+            f.flush()  # Force write to disk
+            os.fsync(f.fileno())  # Ensure physical write
+        
+        # Verify write
+        with open(json_path, 'r') as f:
+            saved_data = json.load(f)
+            if saved_data != journals:
+                st.error("Write verification failed!")
+                return False
+        
         return True
     except Exception as e:
-        st.error(f"Error saving journals: {str(e)}")
+        st.error(f"Save failed: {str(e)}")
         return False
 
 def add_journal(name, abbreviation):
-    """Add a new journal"""
-    if name in st.session_state.current_journals:
-        st.warning("This journal already exists.")
+    """Add a new journal with validation and atomic operations"""
+    # Validate inputs
+    error = validate_journal(name, abbreviation)
+    if error:
+        st.warning(error)
         return False
     
-    # Convert abbreviation to uppercase
     abbreviation = abbreviation.upper()
-    st.session_state.current_journals[name] = abbreviation
-    return save_journals(st.session_state.current_journals)
+    
+    # Create new journals dict first
+    new_journals = {**st.session_state.current_journals, name: abbreviation}
+    
+    # Try saving first
+    if not save_journals(new_journals):
+        return False
+    
+    # Only update session state after successful save
+    st.session_state.current_journals = new_journals
+    return True
 
 def update_journal(old_name, new_name, new_abbreviation):
-    """Update an existing journal"""
-    # Convert abbreviation to uppercase
+    """Safer update implementation"""
+    if old_name not in st.session_state.current_journals:
+        st.warning("Journal not found")
+        return False
+    
+    error = validate_journal(new_name, new_abbreviation)
+    if error:
+        st.warning(error)
+        return False
+    
     new_abbreviation = new_abbreviation.upper()
-    if old_name in st.session_state.current_journals:
-        del st.session_state.current_journals[old_name]
-    st.session_state.current_journals[new_name] = new_abbreviation
-    return save_journals(st.session_state.current_journals)
+    
+    # Create modified copy first
+    updated_journals = st.session_state.current_journals.copy()
+    del updated_journals[old_name]
+    updated_journals[new_name] = new_abbreviation
+    
+    if not save_journals(updated_journals):
+        return False
+    
+    st.session_state.current_journals = updated_journals
+    return True
 
 def delete_journal(name):
-    """Delete a journal"""
-    if name in st.session_state.current_journals:
-        del st.session_state.current_journals[name]
-        return save_journals(st.session_state.current_journals)
-    return False
+    """Safer delete implementation"""
+    if name not in st.session_state.current_journals:
+        return False
+    
+    # Create modified copy first
+    updated_journals = st.session_state.current_journals.copy()
+    del updated_journals[name]
+    
+    if not save_journals(updated_journals):
+        return False
+    
+    st.session_state.current_journals = updated_journals
+    return True
 
 # XML Processing Functions
 def parse_date(date_str):
@@ -765,3 +812,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
