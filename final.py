@@ -45,17 +45,24 @@ if 'current_journals' not in st.session_state:
     st.session_state.current_journals = {}
 
 # Constants
-JOURNALS_FILE = "journal_shortcodes.json"
+import os
+JOURNALS_FILE = os.path.join(os.path.dirname(__file__), "journal_shortcodes.json")
 
 # Journal Management Functions
 def load_journals():
-    """Load journals from JSON file"""
+    """Load journals from JSON file with deployment-safe paths"""
     try:
-        if Path(JOURNALS_FILE).exists():
-            with open(JOURNALS_FILE, 'r') as f:
+        # Get absolute path to JSON file
+        json_path = os.path.join(os.path.dirname(__file__), "journal_shortcodes.json")
+        
+        if os.path.exists(json_path):
+            with open(json_path, 'r') as f:
                 return json.load(f)
-        st.error(f"Journal configuration file not found at {JOURNALS_FILE}")
-        return {}
+        else:
+            # Create empty file if it doesn't exist
+            with open(json_path, 'w') as f:
+                json.dump({}, f)
+            return {}
     except Exception as e:
         st.error(f"Error loading journals: {str(e)}")
         return {}
@@ -756,4 +763,5 @@ def main():
         st.session_state.show_success = False
 
 if __name__ == "__main__":
+
     main()
