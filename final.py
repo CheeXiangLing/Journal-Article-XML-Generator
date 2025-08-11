@@ -45,111 +45,67 @@ if 'current_journals' not in st.session_state:
     st.session_state.current_journals = {}
 
 # Constants
-import os
-JOURNALS_FILE = os.path.join(os.path.dirname(__file__), "journal_shortcodes.json")
+JOURNALS_FILE = "journal_shortcodes.json"
 
 # Journal Management Functions
 def load_journals():
-    """Load journals from JSON file with deployment-safe paths"""
+    """Load journals from JSON file"""
     try:
-        # Get absolute path to JSON file
-        json_path = os.path.join(os.path.dirname(__file__), "journal_shortcodes.json")
-        
-        if os.path.exists(json_path):
-            with open(json_path, 'r') as f:
+        if Path(JOURNALS_FILE).exists():
+            with open(JOURNALS_FILE, 'r') as f:
                 return json.load(f)
-        else:
-            # Create empty file if it doesn't exist
-            with open(json_path, 'w') as f:
-                json.dump({}, f)
-            return {}
+        # If file doesn't exist, create it with an empty dict
+        with open(JOURNALS_FILE, 'w') as f:
+            json.dump({}, f)
+        return {}
     except Exception as e:
         st.error(f"Error loading journals: {str(e)}")
         return {}
 
 def save_journals(journals):
+    """Save journals to JSON file"""
     try:
-        # Get absolute path
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        json_path = os.path.join(base_dir, "journal_shortcodes.json")
-        
-        # Write with file sync
-        with open(json_path, 'w') as f:
+        with open(JOURNALS_FILE, 'w') as f:
             json.dump(journals, f, indent=2)
-            f.flush()  # Force write to disk
-            os.fsync(f.fileno())  # Ensure physical write
-        
-        # Verify write
-        with open(json_path, 'r') as f:
-            saved_data = json.load(f)
-            if saved_data != journals:
-                st.error("Write verification failed!")
-                return False
-        
         return True
     except Exception as e:
-        st.error(f"Save failed: {str(e)}")
+        st.error(f"Error saving journals: {str(e)}")
         return False
 
 def add_journal(name, abbreviation):
-    """Add a new journal with validation and atomic operations"""
-    # Validate inputs
-    error = validate_journal(name, abbreviation)
-    if error:
-        st.warning(error)
+    """Add a new journal"""
+    if name in st.session_state.current_journals:
+        st.warning("This journal already exists.")
         return False
     
+    # Convert abbreviation to uppercase
     abbreviation = abbreviation.upper()
-    
-    # Create new journals dict first
-    new_journals = {**st.session_state.current_journals, name: abbreviation}
-    
-    # Try saving first
-    if not save_journals(new_journals):
-        return False
-    
-    # Only update session state after successful save
-    st.session_state.current_journals = new_journals
-    return True
+    st.session_state.current_journals[name] = abbreviation
+    if save_journals(st.session_state.current_journals):
+        st.session_state.current_journals = load_journals()  # Reload to ensure consistency
+        return True
+    return False
 
 def update_journal(old_name, new_name, new_abbreviation):
-    """Safer update implementation"""
-    if old_name not in st.session_state.current_journals:
-        st.warning("Journal not found")
-        return False
-    
-    error = validate_journal(new_name, new_abbreviation)
-    if error:
-        st.warning(error)
-        return False
-    
+    """Update an existing journal"""
+    # Convert abbreviation to uppercase
     new_abbreviation = new_abbreviation.upper()
-    
-    # Create modified copy first
-    updated_journals = st.session_state.current_journals.copy()
-    del updated_journals[old_name]
-    updated_journals[new_name] = new_abbreviation
-    
-    if not save_journals(updated_journals):
-        return False
-    
-    st.session_state.current_journals = updated_journals
-    return True
+    if old_name in st.session_state.current_journals:
+        del st.session_state.current_journals[old_name]
+    st.session_state.current_journals[new_name] = new_abbreviation
+    if save_journals(st.session_state.current_journals):
+        st.session_state.current_journals = load_journals()  # Reload to ensure consistency
+        return True
+    return False
 
 def delete_journal(name):
-    """Safer delete implementation"""
-    if name not in st.session_state.current_journals:
-        return False
-    
-    # Create modified copy first
-    updated_journals = st.session_state.current_journals.copy()
-    del updated_journals[name]
-    
-    if not save_journals(updated_journals):
-        return False
-    
-    st.session_state.current_journals = updated_journals
-    return True
+    """Delete a journal"""
+    if name in st.session_state.current_journals:
+        del st.session_state.current_journals[name]
+        if save_journals(st.session_state.current_journals):
+            st.session_state.current_journals = load_journals()  # Reload to ensure consistency
+            return True
+    return False
 
 # XML Processing Functions
 def parse_date(date_str):
@@ -267,7 +223,6 @@ def generate_filename(article_url, xml_content):
     except Exception as e:
         st.warning(f"Could not generate filename: {str(e)}")
         return "formatted_article_set.xml"
-    
     
 def indent(elem, level=0):
     indent_str = "  "
@@ -453,7 +408,6 @@ def process_files(pdf_file, input_xml, article_url, pdf_link):
                 st.warning(f"Could not scrape article URL: {str(e)}")
 
             # Volume/Issue/Pages
-
             ET.SubElement(article_meta, "Volume").text = volume
             ET.SubElement(article_meta, "Issue").text = issue
 
@@ -667,7 +621,7 @@ def main():
                 if cols[3].button("🗑️", key=f"delete_{idx}"):
                     if delete_journal(journal_name):
                         st.success(f"Deleted {journal_name}")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Failed to delete journal")
     
@@ -684,7 +638,7 @@ def main():
                     if update_journal(old_name, edit_name, edit_abbrev):
                         st.success("Journal updated successfully!")
                         st.session_state.edit_journal_index = None
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Failed to update journal")
                 else:
@@ -704,7 +658,7 @@ def main():
                     else:
                         if add_journal(new_journal, new_abbrev):
                             st.success(f"Added {new_journal} ({new_abbrev}) to journals list!")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("Failed to add journal")
                 else:
@@ -810,6 +764,4 @@ def main():
         st.session_state.show_success = False
 
 if __name__ == "__main__":
-
     main()
-
