@@ -530,7 +530,7 @@ def combine_with_template(template_file):
             os.remove(temp_template)
 
 def main():
-    st.title("Journal Article XML Generator")
+    st.title("Journal Article XML Generatorss")
     st.markdown('<div style="font-size:18px;margin-bottom:10px; font-weight:600">This tool creates JATS XML by merging metadata from the article PDF and web input with back-section content from Vertopal.</div>', unsafe_allow_html=True)
     
     # Main XML Processing Form
@@ -634,5 +634,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
