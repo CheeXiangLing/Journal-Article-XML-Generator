@@ -23,7 +23,6 @@ if missing:
                          stdout=subprocess.DEVNULL, 
                          stderr=subprocess.DEVNULL)
 
-# Initialize session state
 if 'reset_counter' not in st.session_state:
     st.session_state.reset_counter = 0
 if 'show_success' not in st.session_state:
@@ -635,3 +634,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
